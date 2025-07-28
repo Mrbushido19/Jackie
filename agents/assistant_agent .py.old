@@ -1,0 +1,125 @@
+"""
+Agent LangChain avec outils Microsoft Graph et gestion du contexte
+"""
+from typing import Union
+import re
+
+from langchain.agents import Tool, AgentExecutor, create_react_agent
+from langchain.prompts.base import BasePromptTemplate
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import LLMChain
+from langchain.agents import AgentOutputParser
+from langchain.schema import AgentAction, AgentFinish
+
+
+from tools.graph_tools import GraphTools
+from llm.local_llm import LocalLLM
+
+# 🧠 Template du prompt pour l'agent
+# AGENT_PROMPT_TEMPLATE = """
+# Tu es un assistant IA pour un collaborateur d'entreprise.
+# Tu peux lire ses mails, son agenda et ses tâches en utilisant des outils spécifiques {tools}
+
+# Reponds aux questions en utilisant les outils microsoft Graph API disponibles.
+# Tu as accès aux outils suivants comme des actions que tu peux appeler: {tool_names}
+
+# Question : {input}
+# {agent_scratchpad}
+
+# Réponds en utilisant ce format :
+# Action: [nom de l'outil]
+# Arguments: [arguments de l'outil]
+
+# Sinon, si tu peux répondre directement :
+# Final Answer: [réponse finale]
+# """
+
+class CustomOutputParser(AgentOutputParser):
+    def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
+        """
+        Analyse la sortie brute du LLM et en extrait l'action ou la réponse finale.
+        """
+        if "Final Answer:" in text:
+            return AgentFinish(
+                return_values={"output": text.split("Final Answer:")[-1].strip()},
+                log=text,
+            )
+
+        # Match l'action et les arguments
+        match = re.search(r"Action:\s*(.*?)\s*Arguments:\s*(.*)", text, re.DOTALL)
+        if not match:
+            return AgentFinish(
+                return_values={"output": "Je ne comprends pas la requête."},
+                log=text,
+            )
+
+        return AgentAction(
+            tool=match.group(1).strip(),
+            tool_input=match.group(2).strip(),
+            log=text,
+        )
+
+class AssistantAgent:
+    def __init__(self, graph_tools: GraphTools):
+        self.llm = LocalLLM().llm  # Assure-toi que LocalLLM expose .llm
+        self.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=False)
+        self.tools = self._build_tools(graph_tools)
+        self.agent = self._build_agent()
+
+    def _build_tools(self, graph_tools: GraphTools) -> list[Tool]:
+        return [
+            Tool(name="get_user_info", func=graph_tools.get_user_info, description="Récupère les infos de l'utilisateur"),
+            Tool(name="get_emails", func=graph_tools.get_emails, description="Récupère les derniers emails"),
+            Tool(name="get_events", func=graph_tools.get_events, description="Récupère les prochains événements"),
+            Tool(name="get_tasks", func=graph_tools.get_tasks, description="Récupère les tâches à venir"),
+        ]
+
+    def _build_agent(self) -> AgentExecutor:
+        prompt = BasePromptTemplate(
+            template="""Tu es un assistant IA qui aide à gérer les informations personnelles et professionnelles.
+
+            Tu as accès aux outils suivants :
+            {tools}
+
+            Utilise ces outils pour répondre aux questions de l'utilisateur.
+
+            Historique de la conversation :
+            {chat_history}
+
+            Question de l'utilisateur : {input}
+
+            Réponds en utilisant ce format :
+            Action: [nom de l'outil]
+            Arguments: [arguments de l'outil]
+
+            Sinon, si tu peux répondre directement :
+            Final Answer: [réponse finale]
+                """,
+            input_variables=["input", "chat_history", "tools"]
+        )
+        
+        llm_chain = LLMChain(llm=self.llm, prompt=prompt)
+        output_parser = CustomOutputParser()
+
+        agent = create_react_agent(
+            llm=llm_chain,
+            prompt=prompt,
+            output_parser=output_parser,
+            tools=self.tools,
+        )
+
+        return AgentExecutor.from_agent_and_tools(
+            agent=agent,
+            tools=self.tools,
+            memory=self.memory,
+            verbose=True
+        )
+
+    def process_query(self, query: str) -> str:
+        """
+        Traite une requête utilisateur via l'agent IA.
+        """
+        try:
+            return self.agent.invoke({"input": query})["output"]
+        except Exception as e:
+            return f"Erreur lors du traitement : {str(e)}"
