@@ -15,7 +15,7 @@ from langchain_core.agents import AgentAction, AgentFinish
 
 
 template = '''You are a reasoning agent named "Jackie" with access to external tools. Your goal is to answer questions in french accurately by thinking step-by-step and using tools when helpful.
-if you don't need to use a tool, just answer the question directly, skip the structure.
+You have access to the following tools:
 
 Available tools:
 {tools}
@@ -24,7 +24,7 @@ Use this structure:
 
 Question: the user's question
 Thought: analyze what information is needed
-Action: choose a tool from [{tool_names}]
+Action: choose a tool from [{tool_names}] 
 Action Input: input to the chosen tool
 Observation: result from the tool
 ... (repeat as necessary)
@@ -53,16 +53,25 @@ class CustomOutputParser(AgentOutputParser):
                 return_values={"output": text.split("Final Answer:")[-1].strip()},
                 log=text,
             )
-
+        
+        
         match = re.search(r"Action:\s*(.*?)\s*Action Input:\s*(.*)", text, re.DOTALL)
         if not match:
             return AgentFinish(
-                return_values={text.split()},
+                return_values={"output": "Je ne peux pas traiter cette réponse. Veuillez reformuler votre question."},
                 log=text,
             )
-
+        
         action_name = match.group(1).strip()
         action_input = match.group(2).strip()
+        
+        # if "None" in action_name or not action_name:
+        #     return AgentFinish(
+        #         return_values={"output": "Je ne peux pas répondre à cette question sans utiliser d'outil."},
+        #         log=text,
+        #     )   
+
+        
         return AgentAction(
             tool=action_name,
             tool_input=action_input,
@@ -82,6 +91,7 @@ class AssistantAgent:
         return [
             Tool(name="get_user_info", func=graph_tools.get_user_info,description="Use this tool to fetch user profile details like name, department, and email address from Microsoft Graph"),
             Tool(name="get_emails", func=graph_tools.get_emails, description="Use this to retrieve the last 10 emails from a user's Microsoft 365 mailbox, the input should be a number indicating how many emails to retrieve, e.g., 10"),
+            Tool(name="get_emails_bysearch", func=graph_tools.get_emails_bysearch, description="Use this tool to search for emails containing a specific keyword in the subject or body. Input should be the keyword to search for."),
             Tool(name="get_reportings", func=graph_tools.get_reportings, description="Use this tool to download files from the Reporting folder in SharePoint. It saves the files in the ./downloads directory."),
             # Tool(name="get_user_workspaces", func=bi_tools.get_user_workspaces, description="Use this tool to fetch the list of Power BI workspaces the user has access to. It returns a list of workspace names and IDs."),
             # Tool(name="get_workspace_datasets", func=bi_tools.get_workspace_datasets, description="Use this tool to fetch datasets from a specific Power BI workspace. Input should be the workspace ID."),

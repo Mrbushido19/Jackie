@@ -27,11 +27,10 @@ class GraphTools:
         except requests.exceptions.HTTPError as e:
             Errormessage = "Erreur lors de la récupération des informations utilisateur: {e}"
             return Errormessage
-
-    def get_emails(self, _input: str = None):
-        """Retourne une liste d'emails : [{subject, content}]"""
+    def get_emails_bysearch(self, _input: str):
+        """retourne une liste d'emails contenant le mot-clé de recherche"""
         response = requests.get(
-            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}",
+            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}?$search={_input}",
             headers=self.headers
         )
         response.raise_for_status()
@@ -41,6 +40,7 @@ class GraphTools:
 
         for email in data:
             subject = email.get('subject', '(Sans sujet)')
+            sender = email.get('sender', {}).get('emailAddress', {}).get('address', '(Sans expéditeur)')
             body = email.get('body', {})
             content_type = body.get('contentType', '').lower()
             content = body.get('content', '')
@@ -52,7 +52,38 @@ class GraphTools:
             content = nettoyer(content)
             emails.append({
                 "subject": subject,
-                "content": content
+                "content": content,
+                "sender": sender
+            })
+
+        return emails
+    def get_emails(self, _input: str = None):
+        """Retourne une liste d'emails depuis la messagerie de l'utilisateur"""
+        response = requests.get(
+            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        data = response.json().get('value', [])
+
+        emails = []
+
+        for email in data:
+            subject = email.get('subject', '(Sans sujet)')
+            sender = email.get('sender', {}).get('emailAddress', {}).get('address', '(Sans expéditeur)')
+            body = email.get('body', {})
+            content_type = body.get('contentType', '').lower()
+            content = body.get('content', '')
+
+            if content_type == 'html':
+                soup = BeautifulSoup(content, 'html.parser')
+                content = soup.get_text()
+
+            content = nettoyer(content)
+            emails.append({
+                "subject": subject,
+                "content": content,
+                "sender": sender
             })
 
         return emails
