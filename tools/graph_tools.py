@@ -16,21 +16,30 @@ class GraphTools:
             "Content-Type": "application/json"
         }
 
-    def get_user_info(self, _input: str):
+    def get_user_info(self, _input: str = None):
         """Récupère les informations de l'utilisateur"""
-        try:
-            response = requests.get(
-            f"{GRAPH_ENDPOINT}{ENDPOINTS['me']}",
-            headers=self.headers
-            )
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            Errormessage = "Erreur lors de la récupération des informations utilisateur: {e}"
-            return Errormessage
+        
+        user_info = []
+            
+        response = requests.get(
+        f"{GRAPH_ENDPOINT}{ENDPOINTS['me']}",
+        headers=self.headers
+        )
+        response.raise_for_status()
+        data = response.json()
+        user_info.append({
+                "displayName": data.get('displayName', '(Sans nom)'),
+                "jobTitle": data.get('jobTitle', '(Sans poste)'),
+                "id": data.get('id', ''),
+                "mail": data.get('mail', '(Sans email)')
+        })
+        return user_info
+    
+    
     def get_emails_bysearch(self, _input: str):
         """retourne une liste d'emails contenant le mot-clé de recherche"""
         response = requests.get(
-            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}?$search={_input}",
+            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}??$select=subject,id,body,sender,toRecipients&$search={_input}",
             headers=self.headers
         )
         response.raise_for_status()
@@ -60,7 +69,7 @@ class GraphTools:
     def get_emails(self, _input: str = None):
         """Retourne une liste d'emails depuis la messagerie de l'utilisateur"""
         response = requests.get(
-            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}",
+            f"{GRAPH_ENDPOINT}{ENDPOINTS['messages']}?$select=subject,id,body,sender,toRecipients",
             headers=self.headers
         )
         response.raise_for_status()

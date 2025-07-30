@@ -7,6 +7,7 @@ import re
 from typing import Union
 from langchain_core.prompts import ChatPromptTemplate
 from tools.graph_tools import GraphTools
+from langchain.memory import ConversationBufferMemory
 # from tools.pow_bi_tools import BiTools
 from llm.local_llm import LocalLLM
 from langchain.agents import create_react_agent, AgentExecutor
@@ -16,6 +17,13 @@ from langchain_core.agents import AgentAction, AgentFinish
 
 template = '''You are a reasoning agent named "Jackie" with access to external tools. Your goal is to answer questions in french accurately by thinking step-by-step and using tools when helpful.
 You have access to the following tools:
+if you don't need to use a tool use this structure:
+Question: the user's question
+Thought: analyze what information is needed
+action: "None" (indicating no tool is needed)
+action_input: "None" (indicating no input is needed)
+thought: analyse to reach the great answer
+final_answer: your final, concise response
 
 Available tools:
 {tools}
@@ -27,13 +35,17 @@ Thought: analyze what information is needed
 Action: choose a tool from [{tool_names}] 
 Action Input: input to the chosen tool
 Observation: result from the tool
-... (repeat as necessary)
 Thought: combine all observations to reach the great answer
+... (repeat as necessary)
+
 Final Answer: your final, concise response
 
 Rules:
 - Use tools only when needed.
+- Always think step-by-step.
 - Do not guess if the answer is uncertain.
+- If the tool gives you the answer, provide it directly with "Final answer:"
+- Do not repeat the same tool call if the result hasn’t changed.
 - Ensure the final answer is complete and factual.
 
 Begin!
@@ -53,30 +65,59 @@ class CustomOutputParser(AgentOutputParser):
                 return_values={"output": text.split("Final Answer:")[-1].strip()},
                 log=text,
             )
-        
-        
+
         match = re.search(r"Action:\s*(.*?)\s*Action Input:\s*(.*)", text, re.DOTALL)
         if not match:
             return AgentFinish(
-                return_values={"output": "Je ne peux pas traiter cette réponse. Veuillez reformuler votre question."},
+                return_values={"output": text.strip()},
                 log=text,
             )
-        
-        action_name = match.group(1).strip()
-        action_input = match.group(2).strip()
-        
-        # if "None" in action_name or not action_name:
-        #     return AgentFinish(
-        #         return_values={"output": "Je ne peux pas répondre à cette question sans utiliser d'outil."},
-        #         log=text,
-        #     )   
 
-        
+
+
+        action_name = match.group(1).strip()
+
+        action_input = match.group(2).strip()
+
         return AgentAction(
             tool=action_name,
             tool_input=action_input,
             log=text,
         )
+# class CustomOutputParser(AgentOutputParser):
+#     def parse(self, text: str) -> Union[AgentAction, AgentFinish]:
+#         """
+#         Analyse la sortie brute du LLM et extrait l'action ou la réponse finale.
+#         """
+#         if "Final Answer:" in text:
+#             return AgentFinish(
+#                 return_values={"output": text.split("Final Answer:")[-1].strip()},
+#                 log=text,
+#             )
+        
+        
+#         match = re.search(r"Action:\s*(.*?)\s*Action Input:\s*(.*)", text, re.DOTALL)
+#         if not match:
+#             return AgentFinish(
+#                 return_values={"output": text},
+#                 log=text,
+#             )
+        
+#         action_name = match.group(1).strip()
+#         action_input = match.group(2).strip()
+        
+#         # if "None" in action_name or not action_name:
+#         #     return AgentFinish(
+#         #         return_values={"output": "Je ne peux pas répondre à cette question sans utiliser d'outil."},
+#         #         log=text,
+#         #     )   
+
+        
+#         return AgentAction(
+#             tool=action_name,
+#             tool_input=action_input,
+#             log=text,
+#         )
 
 
 class AssistantAgent:
@@ -89,7 +130,7 @@ class AssistantAgent:
 
     def _build_tools(self, graph_tools: GraphTools) -> list[Tool]:
         return [
-            Tool(name="get_user_info", func=graph_tools.get_user_info,description="Use this tool to fetch user profile details like name, department, and email address from Microsoft Graph"),
+            Tool(name="get_user_info", func=graph_tools.get_user_info,description="Use this tool to retrieve informations about the user, such as their name, email, and job title."),
             Tool(name="get_emails", func=graph_tools.get_emails, description="Use this to retrieve the last 10 emails from a user's Microsoft 365 mailbox, the input should be a number indicating how many emails to retrieve, e.g., 10"),
             Tool(name="get_emails_bysearch", func=graph_tools.get_emails_bysearch, description="Use this tool to search for emails containing a specific keyword in the subject or body. Input should be the keyword to search for."),
             Tool(name="get_reportings", func=graph_tools.get_reportings, description="Use this tool to download files from the Reporting folder in SharePoint. It saves the files in the ./downloads directory."),
@@ -104,7 +145,7 @@ class AssistantAgent:
             llm=self.llm,
             prompt=prompt_template,
             tools=self.tools,
-            output_parser=output_parser,  # Arrête l'agent après la réponse finale
+            output_parser=output_parser            # Arrête l'agent après la réponse finale
         )
 
         return AgentExecutor.from_agent_and_tools(
