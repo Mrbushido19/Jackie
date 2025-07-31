@@ -37,7 +37,7 @@ class MSAuthenticator:
         """
         try:
             result = self.app.acquire_token_by_device_flow(flow)
-            print(result)
+            # print(result)
             if "access_token" in result:
                 return result["access_token"]
             else:
@@ -45,5 +45,18 @@ class MSAuthenticator:
         except Exception as e:
             print(f"Erreur d'authentification: {str(e)}")
             return None 
-        
+    
+    def refresh_token(self, refresh_token):
+        """
+        Rafraîchit le token d'accès à l'aide du refresh token
+        """
+        try:
+            result = self.app.acquire_token_by_refresh_token(refresh_token, scopes=SCOPES)
+            if "access_token" in result:
+                return result["access_token"]
+            else:
+                raise ValueError("Erreur lors du rafraîchissement du token")
+        except Exception as e:
+            print(f"Erreur de rafraîchissement du token: {str(e)}")
+            return None
 
