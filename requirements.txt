@@ -5,3 +5,4 @@ langchain-groq
 bs4
 wget
 streamlit
+langchain-community

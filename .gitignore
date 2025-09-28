@@ -1,4 +1,14 @@
-downloads/*
-test.py
-jackie.zip
-venv/*
+# Ignorer le dossier downloads
+downloads/
+
+# Ignorer test.py à la racine
+/test.py
+
+# Ignorer jackie.zip à la racine
+/jackie.zip
+
+# Ignorer le dossier venv
+venv/
+
+# Ignorer le fichier .env
+.env
