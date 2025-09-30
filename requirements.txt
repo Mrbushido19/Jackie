@@ -6,3 +6,4 @@ bs4
 wget
 streamlit
 langchain-community
+langchain-ollama
